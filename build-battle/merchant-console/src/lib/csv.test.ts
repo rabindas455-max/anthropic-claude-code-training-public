@@ -1,6 +1,12 @@
 import { describe, expect, it } from "vitest"
 import { Payment } from "@/data/types"
-import { EXPORT_COLUMNS, exportFilename, toCsv } from "./csv"
+import {
+  DEFAULT_EXPORT_COLUMNS,
+  EXPORT_COLUMNS,
+  exportFilename,
+  parseExportColumns,
+  toCsv,
+} from "./csv"
 
 /**
  * The export is the file ops hands to a merchant, so a broken cell is a
@@ -76,10 +82,48 @@ describe("toCsv", () => {
   })
 })
 
+describe("parseExportColumns", () => {
+  it("keeps a requested subset of columns in the order given", () => {
+    expect(parseExportColumns("currency,id,amount")).toEqual([
+      "currency",
+      "id",
+      "amount",
+    ])
+  })
+
+  it("excludes card last four by default", () => {
+    expect(parseExportColumns(null)).toEqual(DEFAULT_EXPORT_COLUMNS)
+    expect(parseExportColumns(null)).not.toContain("last4")
+  })
+
+  it("treats an explicit empty selection as exporting nothing, not the defaults", () => {
+    expect(parseExportColumns("")).toEqual([])
+  })
+
+  it("drops a column name that isn't on the allowlist", () => {
+    expect(parseExportColumns("id,not_a_real_column,amount")).toEqual([
+      "id",
+      "amount",
+    ])
+  })
+})
+
 describe("exportFilename", () => {
   it("stamps the UTC date, so two exports on the same day collide by design", () => {
-    expect(exportFilename(new Date("2026-03-14T23:00:00.000Z"))).toBe(
-      "payments-2026-03-14.csv",
-    )
+    expect(
+      exportFilename("filtered", undefined, new Date("2026-03-14T23:00:00.000Z")),
+    ).toBe("payments-2026-03-14.csv")
+  })
+
+  it("folds the active status into the filename", () => {
+    expect(
+      exportFilename("filtered", "disputed", new Date("2026-08-13T00:00:00.000Z")),
+    ).toBe("payments-disputed-2026-08-13.csv")
+  })
+
+  it("marks an all-payments export regardless of the active status", () => {
+    expect(
+      exportFilename("all", "disputed", new Date("2026-08-13T00:00:00.000Z")),
+    ).toBe("payments-all-2026-08-13.csv")
   })
 })

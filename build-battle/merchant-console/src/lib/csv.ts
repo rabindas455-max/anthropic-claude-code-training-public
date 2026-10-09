@@ -1,13 +1,11 @@
 import { merchantById } from "@/data/merchants"
-import { Payment } from "@/data/types"
+import { Payment, PaymentStatus } from "@/data/types"
 import { formatMoney } from "./money"
 
 /**
- * CSV export for the payments table.
- *
- * The column set is fixed. Ops has asked for control over it — that is
- * NWP-101 — but today everyone gets every column, including the card
- * last four, whether or not the file is going to a merchant.
+ * CSV export for the payments table. Ops picks the columns and the scope
+ * (NWP-101); this file owns the column allowlist, the per-cell formatting,
+ * and the filename — the route handler never touches any of it directly.
  */
 
 export const EXPORT_COLUMNS = [
@@ -24,6 +22,30 @@ export const EXPORT_COLUMNS = [
 ] as const
 
 export type ExportColumn = (typeof EXPORT_COLUMNS)[number]
+
+/** Card last-four is opt-in: it's what used to make every export need a manual scrub before it could go to a merchant. */
+export const DEFAULT_EXPORT_COLUMNS: readonly ExportColumn[] =
+  EXPORT_COLUMNS.filter((column) => column !== "last4")
+
+const EXPORT_COLUMN_SET: ReadonlySet<string> = new Set(EXPORT_COLUMNS)
+
+/**
+ * Columns arrive from the client as a query param, so they're validated
+ * against the allowlist here rather than trusted by the route handler.
+ *
+ * - No `columns` param at all -> the safe default set (no last4).
+ * - An explicit empty selection ("") -> no columns, so the caller can tell
+ *   "nothing requested" apart from "nothing specified" and refuse the export
+ *   instead of silently falling back to the defaults.
+ * - Anything not on the allowlist is dropped rather than rejected outright.
+ */
+export function parseExportColumns(raw: string | null): ExportColumn[] {
+  if (raw === null) return [...DEFAULT_EXPORT_COLUMNS]
+  return raw
+    .split(",")
+    .map((column) => column.trim())
+    .filter((column): column is ExportColumn => EXPORT_COLUMN_SET.has(column))
+}
 
 function escapeCell(value: string): string {
   if (/[",\n]/.test(value)) return `"${value.replace(/"/g, '""')}"`
@@ -66,6 +88,13 @@ export function toCsv(
   return [header, ...rows].join("\n")
 }
 
-export function exportFilename(date = new Date()): string {
-  return `payments-${date.toISOString().slice(0, 10)}.csv`
+export function exportFilename(
+  scope: "all" | "filtered",
+  status: PaymentStatus | "all" | undefined,
+  date = new Date(),
+): string {
+  const stamp = date.toISOString().slice(0, 10)
+  if (scope === "all") return `payments-all-${stamp}.csv`
+  if (status && status !== "all") return `payments-${status}-${stamp}.csv`
+  return `payments-${stamp}.csv`
 }

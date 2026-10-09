@@ -2,3 +2,6 @@
 # Local database and build output for the merchant console
 *.db
 *.db-journal
+
+# Local MCP server config — may reference per-user secrets via env vars
+.mcp.json
